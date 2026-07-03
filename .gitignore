@@ -1,1 +1,9 @@
-fluffy/
+/fluffy/
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

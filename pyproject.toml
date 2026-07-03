@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fluffy"
+version = "0.1.0.dev0"
+description = "A drop-in guard layer for autonomous agents: secret redaction, hard spend caps, typed confirmation for destructive actions, and in-conversation permission changes."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "fluffy contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-benchmark",
+    "ruff",
+    "mypy",
+]
+langchain = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fluffy"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"migrations" = "fluffy/migrations"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "migrations", "tests", "LICENSE", "README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+strict = true
+files = ["src"]
+python_version = "3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
