@@ -13,6 +13,11 @@ from fluffy.redact import RedactionFilter, clear_secret_stores, register_secret_
 from fluffy.secrets import MemorySecretStore
 
 
+def events(guard: Guard, n: int = 50) -> list[tuple[str, str]]:
+    """(event, decision) projection of the audit tail — shared test helper."""
+    return [(row["event"], row["decision"]) for row in guard.audit_tail(n)]
+
+
 @pytest.fixture(autouse=True)
 def _clean_redaction_state() -> Iterator[None]:
     """Backstop: keep the module-level store registry and root logger clean.

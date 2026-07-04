@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from conftest import events
 from fluffy import Guard, GuardConfigError, SpendLimitExceeded, SpendPolicy, SpendSpec, ToolMeta
 from fluffy.spend import Caps, day_window_utc
 
@@ -279,12 +280,12 @@ def test_settled_and_denied_spends_visible_in_audit_tail(spend_guard: Guard) -> 
     with pytest.raises(SpendLimitExceeded):
         charge(amount_cents=5000)
 
-    events = [(row["event"], row["decision"]) for row in spend_guard.audit_tail(20)]
-    assert ("spend_reserved", "ok") in events
-    assert ("spend_settled", "ok") in events
-    assert ("spend_denied", "blocked") in events
-    assert ("call", "ok") in events
-    assert ("call", "blocked") in events
+    evs = events(spend_guard, 20)
+    assert ("spend_reserved", "ok") in evs
+    assert ("spend_settled", "ok") in evs
+    assert ("spend_denied", "blocked") in evs
+    assert ("call", "ok") in evs
+    assert ("call", "blocked") in evs
 
 
 def test_released_spend_visible_in_audit_tail(spend_guard: Guard) -> None:
@@ -294,8 +295,7 @@ def test_released_spend_visible_in_audit_tail(spend_guard: Guard) -> None:
     wrapped: Any = spend_guard.wrap(broken, meta=spend_meta())
     with pytest.raises(RuntimeError):
         wrapped(amount_cents=500)
-    events = [row["event"] for row in spend_guard.audit_tail(20)]
-    assert "spend_released" in events
+    assert "spend_released" in [event for event, _ in events(spend_guard, 20)]
 
 
 # --------------------------------------------------------------- config errors

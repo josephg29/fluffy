@@ -23,12 +23,12 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from .audit import write_audit_row
 from .context import CallContext
-from .db import utc_now_iso
+from .db import utc_now, utc_now_iso
 from .exceptions import GuardConfigError, SpendLimitExceeded
 
 __all__ = ["RESERVATION_TTL", "Caps", "SpendInterceptor", "SpendPolicy", "day_window_utc"]
@@ -89,7 +89,7 @@ class SpendInterceptor:
         now_fn: Callable[[], datetime] | None = None,
     ) -> None:
         self._conn = conn
-        self.now_fn: Callable[[], datetime] = now_fn or (lambda: datetime.now(UTC))
+        self.now_fn: Callable[[], datetime] = now_fn or utc_now
         self._policies: dict[str, SpendPolicy] = {}
         # card_id -> validated ZoneInfo, cached at add_policy time so
         # day_window_utc doesn't reconstruct it on every spend.

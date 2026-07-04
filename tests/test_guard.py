@@ -105,7 +105,7 @@ def test_after_interceptors_run_when_tool_raises(guard: Guard) -> None:
     def explode() -> None:
         raise RuntimeError("tool blew up")
 
-    wrapped = guard.wrap(explode, meta=ToolMeta(name="x.explode", tags={"destructive"}))
+    wrapped = guard.wrap(explode, meta=ToolMeta(name="x.explode", tags={"restricted"}))
     with pytest.raises(RuntimeError, match="tool blew up"):
         wrapped()
     assert "after" in ran

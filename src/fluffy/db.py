@@ -11,9 +11,18 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-__all__ = ["connect", "default_migrations_dir", "migrate", "utc_now_iso"]
+__all__ = ["connect", "default_migrations_dir", "migrate", "utc_now", "utc_now_iso"]
 
 DEFAULT_DB_PATH = Path.home() / ".fluffy" / "state.db"
+
+
+def utc_now() -> datetime:
+    """The guard's default clock: an aware UTC ``datetime``.
+
+    Interceptors take this as their ``now_fn`` default so there is exactly one
+    definition of "now" to swap out in time-freezing tests.
+    """
+    return datetime.now(UTC)
 
 
 def utc_now_iso(now: datetime | None = None) -> str:

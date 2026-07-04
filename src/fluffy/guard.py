@@ -32,6 +32,7 @@ from typing import Any, ParamSpec, Protocol, TypeVar, cast
 
 from . import db as _db
 from .audit import AuditInterceptor, audit_tail
+from .confirm import ConfirmInterceptor, check_wrap_meta
 from .context import CallContext, ToolMeta
 from .db import utc_now_iso
 from .redact import RedactionFilter, register_secret_store, unregister_secret_store
@@ -81,10 +82,6 @@ class PermissionInterceptor(_NoOpInterceptor):
     """No-op stub — real implementation lands in FLUF-4."""
 
 
-class ConfirmInterceptor(_NoOpInterceptor):
-    """No-op stub — real implementation lands in FLUF-3."""
-
-
 class Guard:
     """One guard per agent process. Wrap tools; the pipeline does the rest."""
 
@@ -107,7 +104,7 @@ class Guard:
 
         self._permission = PermissionInterceptor()
         self._spend = SpendInterceptor(self.connection)
-        self._confirm = ConfirmInterceptor()
+        self._confirm = ConfirmInterceptor(self.connection)
         self._resolve = SecretResolveInterceptor(self.secret_store)
         self._redact = SecretRedactInterceptor(self.secret_store)
         self._audit = AuditInterceptor(self.connection)
@@ -156,7 +153,13 @@ class Guard:
     def wrap(
         self, tool_fn: Callable[P, R], meta: ToolMeta
     ) -> Callable[P, R] | Callable[P, Coroutine[Any, Any, R]]:
-        """Wrap a sync or async callable in the guard pipeline."""
+        """Wrap a sync or async callable in the guard pipeline.
+
+        Raises :class:`fluffy.GuardConfigError` here — not at call time — for
+        the D6 safety net: a destructive-looking tool name with no
+        ``DestructiveSpec`` and no whitelist entry.
+        """
+        check_wrap_meta(self.connection, meta)
         guarded = bool(GUARD_TAGS.intersection(meta.tags))
         before_chain = self._before_chain if guarded else self._fast_before
         after_chain = self._after_chain if guarded else self._fast_after
@@ -231,6 +234,26 @@ class Guard:
     def add_spend_policy(self, policy: SpendPolicy) -> None:
         """Register (or replace) the spend policy for a card (D5)."""
         self._spend.add_policy(policy)
+
+    def confirm(self, challenge_id: str, typed_phrase: str, remember: bool = False) -> bool:
+        """Verify a typed confirmation phrase for a destructive-action challenge (D6).
+
+        Host-facing: the typed phrase must come from the human channel. On
+        success the agent may retry the blocked call with
+        ``fluffy_challenge_id=<challenge_id>``. ``remember=True`` also
+        whitelists the (tool, resource_kind) so future matching calls skip
+        the gate.
+        """
+        return self._confirm.confirm(challenge_id, typed_phrase, remember=remember)
+
+    def challenge_phrase(self, challenge_id: str) -> str | None:
+        """The confirmation phrase for a challenge — host/human-channel use only (D6).
+
+        Deliberately absent from :class:`fluffy.ConfirmationRequired`: the host
+        shows the phrase to the human out-of-band so a prompt-injected agent
+        can't confirm itself. ``None`` for an unknown challenge id.
+        """
+        return self._confirm.challenge_phrase(challenge_id)
 
     def audit_tail(self, n: int = 20) -> list[sqlite3.Row]:
         """The last ``n`` audit rows, oldest first."""
