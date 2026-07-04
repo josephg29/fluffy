@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,33 +11,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from conftest import events
-from fluffy import Guard, GuardConfigError, SpendLimitExceeded, SpendPolicy, SpendSpec, ToolMeta
+from conftest import events, ledger_rows, make_charge, spend_meta
+from fluffy import Guard, GuardConfigError, SpendLimitExceeded, SpendPolicy, ToolMeta
 from fluffy.spend import Caps, day_window_utc
 
 LA = ZoneInfo("America/Los_Angeles")
-
-
-def spend_meta(card_id: str = "ops", name: str = "stripe.charge") -> ToolMeta:
-    return ToolMeta(
-        name=name,
-        tags=frozenset({"spend"}),
-        spend=SpendSpec(card_id=card_id, amount_from=lambda args, kwargs: kwargs["amount_cents"]),
-    )
-
-
-def make_charge(guard: Guard, card_id: str = "ops") -> Callable[..., str]:
-    def charge(*, amount_cents: int) -> str:
-        return f"charged {amount_cents}"
-
-    wrapped = guard.wrap(charge, meta=spend_meta(card_id))
-    return wrapped  # type: ignore[return-value]
-
-
-def ledger_rows(conn: sqlite3.Connection, card_id: str = "ops") -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT * FROM spend_ledger WHERE card_id = ? ORDER BY id", (card_id,)
-    ).fetchall()
 
 
 @pytest.fixture()

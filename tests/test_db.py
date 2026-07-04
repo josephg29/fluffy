@@ -18,7 +18,7 @@ def test_migrate_creates_all_five_tables(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "state.db")
     try:
         applied = db.migrate(conn)
-        assert applied == [1, 2, 3]
+        assert applied == [1, 2, 3, 4]
         tables = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
@@ -34,6 +34,7 @@ def test_migrate_creates_all_five_tables(tmp_path: Path) -> None:
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
         }
         assert "idx_spend_ledger_card_ts" in indexes
+        assert "idx_permissions_live_kind_subject" in indexes
     finally:
         conn.close()
 
@@ -41,10 +42,10 @@ def test_migrate_creates_all_five_tables(tmp_path: Path) -> None:
 def test_migrate_is_idempotent(tmp_path: Path) -> None:
     conn = db.connect(tmp_path / "state.db")
     try:
-        assert db.migrate(conn) == [1, 2, 3]
+        assert db.migrate(conn) == [1, 2, 3, 4]
         assert db.migrate(conn) == []
         versions = [row[0] for row in conn.execute("SELECT version FROM schema_version")]
-        assert versions == [1, 2, 3]
+        assert versions == [1, 2, 3, 4]
     finally:
         conn.close()
 

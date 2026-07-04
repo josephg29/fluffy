@@ -21,7 +21,7 @@ Semantics:
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -30,6 +30,7 @@ from .audit import write_audit_row
 from .context import CallContext
 from .db import utc_now, utc_now_iso
 from .exceptions import GuardConfigError, SpendLimitExceeded
+from .permissions import BudgetGrant, active_budget_grants, consume_grants, restore_grants
 
 __all__ = ["RESERVATION_TTL", "Caps", "SpendInterceptor", "SpendPolicy", "day_window_utc"]
 
@@ -58,6 +59,16 @@ class Caps:
     daily_cap_cents: int
 
 
+@dataclass(frozen=True, slots=True)
+class _PendingSpend:
+    """before() -> after() state for one in-flight spend (the sanctioned
+    per-call ``_pending`` pattern): the reserved ledger row plus any ``once``
+    grants this spend consumed, so a released spend can restore them."""
+
+    ledger_id: int
+    consumed_grant_ids: tuple[int, ...]
+
+
 def day_window_utc(now: datetime, tz: str | ZoneInfo) -> tuple[str, str]:
     """[start, end) of ``now``'s calendar day in ``tz``, as UTC ISO strings.
 
@@ -70,6 +81,21 @@ def day_window_utc(now: datetime, tz: str | ZoneInfo) -> tuple[str, str]:
     start = datetime.combine(local_day, time.min, tzinfo=zone)
     end = datetime.combine(local_day + timedelta(days=1), time.min, tzinfo=zone)
     return utc_now_iso(start), utc_now_iso(end)
+
+
+def _caps_with_grants(policy: SpendPolicy, grants: Sequence[BudgetGrant]) -> Caps:
+    """Pure cap math over (policy, grants) — the one boost formula.
+
+    Every live grant raises both the per-use and the daily cap by its delta —
+    a granted increase must clear both dimensions or the retried spend it was
+    approved for would still bounce off the per-use cap. Being a pure function
+    of its inputs, this is what FLUF-5's effective-caps cache will memoize.
+    """
+    boost = sum(g.amount_cents for g in grants)
+    return Caps(
+        per_use_cap_cents=policy.per_use_cap_cents + boost,
+        daily_cap_cents=policy.daily_cap_cents + boost,
+    )
 
 
 class SpendInterceptor:
@@ -94,12 +120,10 @@ class SpendInterceptor:
         # card_id -> validated ZoneInfo, cached at add_policy time so
         # day_window_utc doesn't reconstruct it on every spend.
         self._zones: dict[str, ZoneInfo] = {}
-        # call_id -> reserved ledger row id, settled/released in after().
-        # This before()->after() dict is the sanctioned per-call state pattern
-        # for interceptors. FLUF-4: extend the stored record (e.g. a small
-        # dataclass carrying the consumed grant id alongside the ledger id)
-        # rather than adding a parallel dict.
-        self._pending: dict[str, int] = {}
+        # call_id -> _PendingSpend, settled/released in after(). This
+        # before()->after() dict is the sanctioned per-call state pattern
+        # for interceptors.
+        self._pending: dict[str, _PendingSpend] = {}
 
     # ---------------------------------------------------------------- policy
 
@@ -112,26 +136,17 @@ class SpendInterceptor:
         self._zones[policy.card_id] = zone
 
     def effective_caps(self, card_id: str, now: datetime) -> Caps:
-        """The single cap-lookup seam.
+        """The single cap-lookup seam: base policy + active grants (D7).
 
-        Returns the base policy caps. ``now`` is unused by the base policy
-        today; it is part of the seam signature so FLUF-4 can evaluate grant
-        expiry against the same frozen clock as the rest of the spend.
-
-        ``before()`` calls this inside the ``BEGIN IMMEDIATE`` transaction:
-        FLUF-4 consumes ``once`` grants here, and a pre-lock lookup would race
-        the consume.
-
-        TODO(FLUF-4): layer active ``budget_increase`` grants from the
-        ``permissions`` table on top of the base policy here (``once`` grants
-        consumed inside the same spend transaction that uses them).
+        Delegates to the pure :func:`_caps_with_grants` over the card's live
+        grants (unconsumed, unexpired at ``now``). ``before()`` does not call
+        this — it fetches the grants once inside its ``BEGIN IMMEDIATE``
+        transaction and runs the same pure function, so cap math and grant
+        consumption see one snapshot.
         """
-        del now  # reserved for FLUF-4 grant expiry
         policy = self._policy_for(card_id)
-        return Caps(
-            per_use_cap_cents=policy.per_use_cap_cents,
-            daily_cap_cents=policy.daily_cap_cents,
-        )
+        grants = active_budget_grants(self._conn, card_id, utc_now_iso(now))
+        return _caps_with_grants(policy, grants)
 
     def _policy_for(self, card_id: str) -> SpendPolicy:
         try:
@@ -160,32 +175,26 @@ class SpendInterceptor:
         day_start, day_end = day_window_utc(now, self._zones[spec.card_id])
         stale_cutoff = utc_now_iso(now - RESERVATION_TTL)
 
-        # Per-use precheck: decidable from the base policy alone, so it runs
-        # before the write lock. Per the plan, FLUF-4 grants raise *daily*
-        # caps only; if that assumption changes, FLUF-4 moves this check
-        # inside the transaction. The spent-today read here is a plain read
-        # (no write lock) solely to fill in the error message.
-        if amount > policy.per_use_cap_cents:
-            spent = self._spent_today(spec.card_id, day_start, day_end, stale_cutoff)
-            base_caps = Caps(
-                per_use_cap_cents=policy.per_use_cap_cents,
-                daily_cap_cents=policy.daily_cap_cents,
-            )
-            self._deny(ctx, spec.card_id, amount, base_caps, spent, over_per_use=True)
-
-        # Check + reserve share one write transaction (D5): BEGIN IMMEDIATE
-        # takes the write lock up front so no other connection can reserve
-        # between our sum and our insert.
+        # Check + reserve (+ once-grant consumption, D7) share one write
+        # transaction (D5): BEGIN IMMEDIATE takes the write lock up front so
+        # no other connection can reserve — or consume a grant — between our
+        # sum and our insert. The per-use check lives inside the transaction
+        # too, because grants raise both caps and must not race the consume.
         self._conn.execute("BEGIN IMMEDIATE")
         try:
-            # Effective caps resolve first, inside the write transaction:
-            # FLUF-4 consumes `once` grants in this lookup, and a pre-lock
-            # lookup would race the consume.
-            caps = self.effective_caps(spec.card_id, now)
+            # Grants are fetched exactly once per spend, inside the write
+            # transaction (the FLUF-2 seam contract): the same snapshot feeds
+            # the pure cap math and the once-grant consume below, atomically.
+            grants = active_budget_grants(self._conn, spec.card_id, now_iso)
+            caps = _caps_with_grants(policy, grants)
             spent = self._spent_today(spec.card_id, day_start, day_end, stale_cutoff)
+            if amount > caps.per_use_cap_cents:
+                self._conn.rollback()
+                self._deny(ctx, spec.card_id, amount, caps, spent, over_per_use=True)
             if spent + amount > caps.daily_cap_cents:
                 self._conn.rollback()
                 self._deny(ctx, spec.card_id, amount, caps, spent, over_per_use=False)
+            consumed_ids = self._consume_once_grants(policy, grants, now_iso, amount, spent, ctx)
             cursor = self._conn.execute(
                 "INSERT INTO spend_ledger (card_id, ts, amount_cents, state, call_id)"
                 " VALUES (?, ?, ?, 'reserved', ?)",
@@ -204,6 +213,7 @@ class SpendInterceptor:
                     "amount_cents": amount,
                     "spent_today_cents": spent,
                     "ledger_id": ledger_id,
+                    "consumed_grant_ids": list(consumed_ids),
                 },
             )
             self._conn.commit()
@@ -211,28 +221,84 @@ class SpendInterceptor:
             if self._conn.in_transaction:
                 self._conn.rollback()
             raise
-        self._pending[ctx.call_id] = ledger_id
+        self._pending[ctx.call_id] = _PendingSpend(
+            ledger_id=ledger_id, consumed_grant_ids=tuple(consumed_ids)
+        )
 
     def after(self, ctx: CallContext) -> None:
-        ledger_id = self._pending.pop(ctx.call_id, None)
-        if ledger_id is None:
+        pending = self._pending.pop(ctx.call_id, None)
+        if pending is None:
             return  # no reservation was made (denied, untagged, or other tags)
         state = "settled" if ctx.error is None else "released"
         self._conn.execute(
             "UPDATE spend_ledger SET state = ? WHERE id = ?",
-            (state, ledger_id),
+            (state, pending.ledger_id),
         )
+        if state == "released" and pending.consumed_grant_ids:
+            # The tool failed, so the money never moved: give the once-grants
+            # back (permissions.py owns the write; expiry still applies).
+            restore_grants(self._conn, pending.consumed_grant_ids)
+            write_audit_row(
+                self._conn,
+                call_id=ctx.call_id,
+                tool=ctx.tool.name,
+                event="grant_restored",
+                decision="ok",
+                detail={"grant_ids": list(pending.consumed_grant_ids)},
+            )
         write_audit_row(
             self._conn,
             call_id=ctx.call_id,
             tool=ctx.tool.name,
             event=f"spend_{state}",
             decision="ok" if state == "settled" else "released",
-            detail={"ledger_id": ledger_id},
+            detail={"ledger_id": pending.ledger_id},
         )
         self._conn.commit()
 
     # ---------------------------------------------------------------- internals
+
+    def _consume_once_grants(
+        self,
+        policy: SpendPolicy,
+        grants: Sequence[BudgetGrant],
+        now_iso: str,
+        amount: int,
+        spent: int,
+        ctx: CallContext,
+    ) -> list[int]:
+        """Consume the ``once`` grants this spend actually needs (D7).
+
+        Runs inside the caller's ``BEGIN IMMEDIATE`` transaction, after the
+        cap checks passed, over the same ``grants`` snapshot the caps were
+        computed from. A spend that fits under base policy + persistent grants
+        consumes nothing; otherwise ``once`` grants are consumed oldest-first
+        until the spend fits. Every consumed grant raises the per-use and the
+        daily dimension by the same delta, so a single headroom counter — the
+        tighter of the two to start — decides. The caps already admitted the
+        spend, so the loop always terminates with enough headroom.
+        """
+        persistent_boost = sum(g.amount_cents for g in grants if g.duration == "persistent")
+        headroom = min(policy.per_use_cap_cents, policy.daily_cap_cents - spent) + persistent_boost
+        consumed: list[int] = []
+        for grant in grants:
+            if grant.duration != "once":
+                continue
+            if amount <= headroom:
+                break
+            consumed.append(grant.id)
+            headroom += grant.amount_cents
+        if consumed:
+            consume_grants(self._conn, consumed, now_iso)
+            write_audit_row(
+                self._conn,
+                call_id=ctx.call_id,
+                tool=ctx.tool.name,
+                event="grant_consumed",
+                decision="ok",
+                detail={"card_id": policy.card_id, "grant_ids": consumed, "amount_cents": amount},
+            )
+        return consumed
 
     def _spent_today(self, card_id: str, day_start: str, day_end: str, stale_cutoff: str) -> int:
         """Sum of settled + live-reserved cents for the card in [day_start, day_end).

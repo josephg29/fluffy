@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import grant_access
 from fluffy import Guard, ToolMeta
 
 SECRET = "sup3r-s3cret-db-pass"
@@ -31,6 +32,7 @@ def test_secret_handle_roundtrip(
         logging.getLogger("tool.connect").info("connecting with %s", password)
         return f"connected using {password}"
 
+    grant_access(guard, "db.connect")  # "restricted" now has FLUF-4 semantics
     wrapped = guard.wrap(connect_db, meta=ToolMeta(name="db.connect", tags={"restricted"}))
     result = wrapped(HANDLE)
 
@@ -43,7 +45,7 @@ def test_secret_handle_roundtrip(
     assert SECRET not in caplog.text
     assert HANDLE in caplog.text
     # audit rows contain only the handle
-    rows = guard.audit_tail(10)
+    rows = [row for row in guard.audit_tail(10) if row["event"] == "call"]
     assert len(rows) == 1
     assert rows[0]["tool"] == "db.connect"
     assert rows[0]["decision"] == "ok"
@@ -78,6 +80,7 @@ async def test_async_after_hooks_run_when_tool_raises(guard: Guard) -> None:
     async def boom() -> None:
         raise ValueError("async kaboom")
 
+    grant_access(guard, "api.boom")
     wrapped = guard.wrap(boom, meta=ToolMeta(name="api.boom", tags={"restricted"}))
     with pytest.raises(ValueError, match="async kaboom"):
         await wrapped()
@@ -105,6 +108,7 @@ def test_after_interceptors_run_when_tool_raises(guard: Guard) -> None:
     def explode() -> None:
         raise RuntimeError("tool blew up")
 
+    grant_access(guard, "x.explode")
     wrapped = guard.wrap(explode, meta=ToolMeta(name="x.explode", tags={"restricted"}))
     with pytest.raises(RuntimeError, match="tool blew up"):
         wrapped()
@@ -123,6 +127,7 @@ def test_after_hook_exception_does_not_mask_result(guard: Guard) -> None:
             raise RuntimeError("after hook bug")
 
     guard._after_chain = (Bad(), *guard._after_chain)
+    grant_access(guard, "t.fine")
     wrapped = guard.wrap(lambda: "ok", meta=ToolMeta(name="t.fine", tags={"restricted"}))
     assert wrapped() == "ok"
 
@@ -145,12 +150,12 @@ def test_untagged_call_performs_zero_sqlite_statements(guard: Guard) -> None:
     assert statements == []
 
 
-def test_guard_tagged_call_writes_exactly_one_audit_row(guard: Guard) -> None:
+def test_guard_tagged_call_writes_exactly_one_call_audit_row(guard: Guard) -> None:
+    grant_access(guard, "t.tagged")
     wrapped = guard.wrap(lambda: "done", meta=ToolMeta(name="t.tagged", tags={"restricted"}))
     wrapped()
-    rows = guard.audit_tail(10)
+    rows = [row for row in guard.audit_tail(10) if row["event"] == "call"]
     assert len(rows) == 1
-    assert rows[0]["event"] == "call"
     detail = json.loads(rows[0]["detail_json"])
     assert detail["result"] == "done"
 

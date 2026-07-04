@@ -4,6 +4,7 @@ import contextlib
 import json
 import sqlite3
 
+from conftest import grant_access
 from fluffy import Guard, ToolMeta
 from fluffy.audit import audit_tail, write_audit_row
 from fluffy.secrets import MemorySecretStore
@@ -43,6 +44,7 @@ def test_blocked_error_audited_as_blocked(guard: Guard) -> None:
     def denied() -> None:
         raise Blocked("Blocked: nope.", reason="test")
 
+    grant_access(guard, "t.denied")
     wrapped = guard.wrap(denied, meta=ToolMeta(name="t.denied", tags={"restricted"}))
     with contextlib.suppress(Blocked):
         wrapped()

@@ -20,6 +20,7 @@ hook) raises, and must not raise themselves.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import inspect
@@ -33,8 +34,15 @@ from typing import Any, ParamSpec, Protocol, TypeVar, cast
 from . import db as _db
 from .audit import AuditInterceptor, audit_tail
 from .confirm import ConfirmInterceptor, check_wrap_meta
-from .context import CallContext, ToolMeta
+from .context import CallContext, Decision, ToolMeta
 from .db import utc_now_iso
+from .permissions import (
+    Approver,
+    ConsoleApprover,
+    PermissionBroker,
+    PermissionInterceptor,
+    PermissionRequest,
+)
 from .redact import RedactionFilter, register_secret_store, unregister_secret_store
 from .secrets import (
     MemorySecretStore,
@@ -68,20 +76,6 @@ class Interceptor(Protocol):
         ...
 
 
-class _NoOpInterceptor:
-    """Placeholder slot; replaced by a real interceptor in a later ticket."""
-
-    def before(self, ctx: CallContext) -> None:
-        return None
-
-    def after(self, ctx: CallContext) -> None:
-        return None
-
-
-class PermissionInterceptor(_NoOpInterceptor):
-    """No-op stub — real implementation lands in FLUF-4."""
-
-
 class Guard:
     """One guard per agent process. Wrap tools; the pipeline does the rest."""
 
@@ -89,12 +83,16 @@ class Guard:
         self,
         db_path: str | Path | None = None,
         secret_store: SecretStore | None = None,
-        approvers: Sequence[object] | None = None,
+        approvers: Sequence[Approver] | None = None,
     ) -> None:
         self.secret_store: SecretStore = (
             secret_store if secret_store is not None else MemorySecretStore()
         )
-        self.approvers: list[object] = list(approvers) if approvers is not None else []
+        # D7 default chain: the console. GuardianBot is off unless the host
+        # passes it in explicitly.
+        self.approvers: list[Approver] = (
+            list(approvers) if approvers is not None else [ConsoleApprover()]
+        )
 
         self.connection: sqlite3.Connection = _db.connect(db_path)
         _db.migrate(self.connection)
@@ -102,7 +100,8 @@ class Guard:
         register_secret_store(self.secret_store)
         self._install_logging_filter()
 
-        self._permission = PermissionInterceptor()
+        self._broker = PermissionBroker(self.connection, self.approvers)
+        self._permission = PermissionInterceptor(self.connection)
         self._spend = SpendInterceptor(self.connection)
         self._confirm = ConfirmInterceptor(self.connection)
         self._resolve = SecretResolveInterceptor(self.secret_store)
@@ -234,6 +233,27 @@ class Guard:
     def add_spend_policy(self, policy: SpendPolicy) -> None:
         """Register (or replace) the spend policy for a card (D5)."""
         self._spend.add_policy(policy)
+
+    async def request_permission(self, req: PermissionRequest) -> Decision:
+        """Run the approver chain for a permission request (D7).
+
+        On approval a ``permissions`` row is written and takes effect
+        immediately — same conversation, no restart. Denials raise nothing:
+        the returned :class:`Decision` has ``approved=False`` and a message
+        the agent can relay verbatim. Grant expiry is the approver's call —
+        an approver may set ``Decision.expires_in_s`` — never the requesting
+        agent's; without it, grants have no expiry (``once`` grants still die
+        on first use).
+        """
+        return await self._broker.request(req)
+
+    def request_permission_sync(self, req: PermissionRequest) -> Decision:
+        """Sync shim over :meth:`request_permission` for non-async hosts.
+
+        Runs its own event loop, so it must not be called from inside a
+        running loop — ``await guard.request_permission(...)`` there instead.
+        """
+        return asyncio.run(self.request_permission(req))
 
     def confirm(self, challenge_id: str, typed_phrase: str, remember: bool = False) -> bool:
         """Verify a typed confirmation phrase for a destructive-action challenge (D6).

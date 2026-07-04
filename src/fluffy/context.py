@@ -46,11 +46,18 @@ class ToolMeta:
 
 @dataclass(frozen=True, slots=True)
 class Decision:
-    """Outcome of a permission/approval step."""
+    """Outcome of a permission/approval step.
+
+    ``expires_in_s`` lets an *approver* bound an approved grant's lifetime in
+    seconds (the broker turns it into ``expires_ts``). It lives here — on the
+    decider's side of the approval boundary — precisely so the requesting
+    agent has no say over how long its own grant lasts.
+    """
 
     approved: bool
     decider: str
     message: str
+    expires_in_s: int | None = None
 
 
 @dataclass(slots=True)
