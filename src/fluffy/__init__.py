@@ -11,6 +11,7 @@ from .exceptions import (
 from .guard import Guard, Interceptor
 from .redact import RedactionFilter, redact
 from .secrets import MemorySecretStore, SecretStore
+from .spend import SpendPolicy
 
 __version__ = "0.1.0.dev0"
 
@@ -28,6 +29,7 @@ __all__ = [
     "RedactionFilter",
     "SecretStore",
     "SpendLimitExceeded",
+    "SpendPolicy",
     "SpendSpec",
     "ToolMeta",
     "redact",

@@ -41,6 +41,7 @@ from .secrets import (
     SecretResolveInterceptor,
     SecretStore,
 )
+from .spend import SpendInterceptor, SpendPolicy
 
 __all__ = ["GUARD_TAGS", "Guard", "Interceptor"]
 
@@ -80,10 +81,6 @@ class PermissionInterceptor(_NoOpInterceptor):
     """No-op stub — real implementation lands in FLUF-4."""
 
 
-class SpendInterceptor(_NoOpInterceptor):
-    """No-op stub — real implementation lands in FLUF-2."""
-
-
 class ConfirmInterceptor(_NoOpInterceptor):
     """No-op stub — real implementation lands in FLUF-3."""
 
@@ -109,7 +106,7 @@ class Guard:
         self._install_logging_filter()
 
         self._permission = PermissionInterceptor()
-        self._spend = SpendInterceptor()
+        self._spend = SpendInterceptor(self.connection)
         self._confirm = ConfirmInterceptor()
         self._resolve = SecretResolveInterceptor(self.secret_store)
         self._redact = SecretRedactInterceptor(self.secret_store)
@@ -230,6 +227,10 @@ class Guard:
                 )
 
     # ---------------------------------------------------------------- helpers
+
+    def add_spend_policy(self, policy: SpendPolicy) -> None:
+        """Register (or replace) the spend policy for a card (D5)."""
+        self._spend.add_policy(policy)
 
     def audit_tail(self, n: int = 20) -> list[sqlite3.Row]:
         """The last ``n`` audit rows, oldest first."""

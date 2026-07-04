@@ -64,12 +64,19 @@ class Blocked(Exception):
 class SpendLimitExceeded(Blocked):
     """A spend would exceed the per-use or daily cap."""
 
-    _payload_fields = ("requested_cents", "cap_cents", "spent_cents", "remaining_cents")
+    _payload_fields = (
+        "requested_cents",
+        "cap_cents",
+        "spent_cents",
+        "remaining_cents",
+        "cap_kind",
+    )
 
     requested_cents: int
     cap_cents: int
     spent_cents: int
     remaining_cents: int
+    cap_kind: str
 
     def __init__(
         self,
@@ -78,16 +85,19 @@ class SpendLimitExceeded(Blocked):
         cap_cents: int,
         spent_cents: int,
         remaining_cents: int,
+        cap_kind: str = "daily",
         call_id: str = "",
     ) -> None:
         self.requested_cents = requested_cents
         self.cap_cents = cap_cents
         self.spent_cents = spent_cents
         self.remaining_cents = remaining_cents
+        self.cap_kind = cap_kind
         super().__init__(
             f"Blocked: {_dollars(self.requested_cents)} requested, "
-            f"daily cap {_dollars(self.cap_cents)}, "
-            f"{_dollars(self.spent_cents)} already spent today.",
+            f"{cap_kind} cap {_dollars(self.cap_cents)}, "
+            f"{_dollars(self.spent_cents)} already spent today; "
+            f"{_dollars(self.remaining_cents)} remaining.",
             reason="spend_limit_exceeded",
             call_id=call_id,
         )

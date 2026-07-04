@@ -16,9 +16,15 @@ __all__ = ["connect", "default_migrations_dir", "migrate", "utc_now_iso"]
 DEFAULT_DB_PATH = Path.home() / ".fluffy" / "state.db"
 
 
-def utc_now_iso() -> str:
-    """UTC ISO-8601 timestamp string (the only timestamp format we store)."""
-    return datetime.now(UTC).isoformat()
+def utc_now_iso(now: datetime | None = None) -> str:
+    """UTC ISO-8601 timestamp string (the only timestamp format we store).
+
+    With no argument, formats the current moment. Passing an aware ``now``
+    converts it to UTC first — the single owner of datetime→stored-string
+    conversion, so every module formats timestamps identically.
+    """
+    moment = now if now is not None else datetime.now(UTC)
+    return moment.astimezone(UTC).isoformat()
 
 
 def default_migrations_dir() -> Path:
