@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from fluffy import Decision, Guard, PermissionRequest, SpendSpec, ToolMeta
-from fluffy.db import connect, migrate
+from fluffy import Decision, DestructiveSpec, Guard, PermissionRequest, SpendSpec, ToolMeta
+from fluffy.db import connect, migrate, utc_now_iso
 from fluffy.permissions import PermissionBroker
 from fluffy.redact import RedactionFilter, clear_secret_stores, register_secret_store
 from fluffy.secrets import MemorySecretStore
@@ -37,12 +37,41 @@ def approve_all(decider: str = "scripted", expires_in_s: int | None = None) -> S
     )
 
 
-def spend_meta(card_id: str = "ops") -> ToolMeta:
+def spend_meta(
+    card_id: str = "ops",
+    name: str = "stripe.charge",
+    amount_from: Callable[..., int] | None = None,
+) -> ToolMeta:
     return ToolMeta(
-        name="stripe.charge",
+        name=name,
         tags=frozenset({"spend"}),
-        spend=SpendSpec(card_id=card_id, amount_from=lambda args, kwargs: kwargs["amount_cents"]),
+        spend=SpendSpec(
+            card_id=card_id,
+            amount_from=amount_from or (lambda args, kwargs: kwargs["amount_cents"]),
+        ),
     )
+
+
+def destructive_meta(name: str = "delete_project", resource_kind: str = "repo") -> ToolMeta:
+    return ToolMeta(
+        name=name,
+        tags=frozenset({"destructive"}),
+        destructive=DestructiveSpec(
+            resource_kind=resource_kind,
+            summary_from=lambda args, kwargs: (
+                f"This deletes the {resource_kind} `{args[0]}`. This cannot be undone."
+            ),
+        ),
+    )
+
+
+def seed_whitelist(conn: sqlite3.Connection, tool: str, resource_kind: str) -> None:
+    """Whitelist ``(tool, resource_kind)`` directly, as a remembered confirm would."""
+    conn.execute(
+        "INSERT OR IGNORE INTO action_whitelist (tool, resource_kind, added_ts) VALUES (?, ?, ?)",
+        (tool, resource_kind, utc_now_iso()),
+    )
+    conn.commit()
 
 
 def make_charge(guard: Guard, card_id: str = "ops") -> Callable[..., str]:

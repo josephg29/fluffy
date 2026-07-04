@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fluffy"
-version = "0.1.0.dev0"
+dynamic = ["version"]
 description = "A drop-in guard layer for autonomous agents: secret redaction, hard spend caps, typed confirmation for destructive actions, and in-conversation permission changes."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -22,6 +22,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+fluffy = "fluffy.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest",
@@ -29,8 +32,13 @@ dev = [
     "pytest-benchmark",
     "ruff",
     "mypy",
+    # For the adapter integration tests (FakeListLLM + AgentExecutor).
+    "langchain>=0.3,<1.0",
 ]
-langchain = []
+langchain = ["langchain-core>=0.3,<2"]
+
+[tool.hatch.version]
+path = "src/fluffy/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fluffy"]
@@ -44,6 +52,13 @@ include = ["src", "migrations", "tests", "LICENSE", "README.md"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Fast suite by default; run the wheel-based spec acceptance with `-m e2e`
+# and the performance budgets with `-m bench`.
+addopts = "-m 'not e2e and not bench'"
+markers = [
+    "bench: D8 performance-budget benchmarks (CI bench job runs these)",
+    "e2e: spec acceptance against the built wheel in a clean venv (slow)",
+]
 
 [tool.mypy]
 strict = true

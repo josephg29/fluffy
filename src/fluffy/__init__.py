@@ -20,7 +20,7 @@ from .redact import RedactionFilter, redact
 from .secrets import MemorySecretStore, SecretStore
 from .spend import SpendPolicy
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
 
 __all__ = [
     "ApprovalChain",

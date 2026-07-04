@@ -1,0 +1,58 @@
+# PyPI release via trusted publishing (OIDC — no API tokens in secrets).
+#
+# Triggered by pushing the release tag. The repository owner must first
+# configure the "pypi" trusted publisher for this repo/workflow on
+# https://pypi.org/manage/account/publishing/ — publishing is a human action:
+# create the GitHub release/tag by hand, never from automation.
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv pip install -e '.[dev]'
+      # A tag that doesn't match the package version must fail loudly before
+      # any gate runs.
+      - name: Assert tag matches package version
+        run: |
+          pkg="$(uv run python -c 'import fluffy; print(fluffy.__version__)')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$pkg" != "$tag" ]; then
+            echo "::error::tag v${tag} does not match fluffy.__version__ ${pkg}"
+            exit 1
+          fi
+      # Gate the release on the full suite + the D8 bench budgets + the
+      # wheel-based spec acceptance before anything is uploaded.
+      - run: uv run pytest -q
+      - run: uv run pytest -m bench -q
+      - run: uv run pytest -m e2e -q
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fluffy
+    permissions:
+      id-token: write # OIDC trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

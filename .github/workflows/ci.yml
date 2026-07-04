@@ -13,6 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
       - run: uv pip install -e '.[dev]'
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -24,6 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
       - run: uv pip install -e '.[dev]'
       - run: uv run mypy --strict src
 
@@ -37,5 +39,31 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
       - run: uv pip install -e '.[dev]'
       - run: uv run pytest -q
+
+  # D8 performance gate: fails the PR on a budget violation. Pinned to one
+  # runner class; budgets and CI margin live in tests/bench/test_benchmarks.py.
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv pip install -e '.[dev]'
+      - run: uv run pytest -m bench -q --benchmark-columns=mean,median,max
+
+  # Spec §3 acceptance against the built wheel in a clean venv.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv pip install -e '.[dev]'
+      - run: uv run pytest -m e2e -q

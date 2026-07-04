@@ -15,7 +15,7 @@ from .db import utc_now_iso
 from .exceptions import Blocked
 from .redact import redact
 
-__all__ = ["AuditInterceptor", "audit_tail", "write_audit_row"]
+__all__ = ["AuditInterceptor", "audit_grep", "audit_tail", "write_audit_row"]
 
 
 def write_audit_row(
@@ -44,6 +44,20 @@ def write_audit_row(
 def audit_tail(conn: sqlite3.Connection, n: int = 20) -> list[sqlite3.Row]:
     """The last ``n`` audit rows, oldest first."""
     rows = conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (int(n),)).fetchall()
+    rows.reverse()
+    return rows
+
+
+def audit_grep(conn: sqlite3.Connection, term: str, limit: int = 200) -> list[sqlite3.Row]:
+    """Case-insensitive substring match over every text column, oldest first."""
+    like = f"%{term}%"
+    rows = conn.execute(
+        "SELECT * FROM audit_log"
+        " WHERE tool LIKE ? OR event LIKE ? OR decision LIKE ?"
+        " OR call_id LIKE ? OR detail_json LIKE ?"
+        " ORDER BY id DESC LIMIT ?",
+        (like, like, like, like, like, int(limit)),
+    ).fetchall()
     rows.reverse()
     return rows
 

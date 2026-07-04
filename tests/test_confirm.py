@@ -8,23 +8,10 @@ from typing import Any
 
 import pytest
 
-from conftest import events
+from conftest import destructive_meta, events, seed_whitelist
 from fluffy import ConfirmationRequired, DestructiveSpec, Guard, GuardConfigError, ToolMeta
 from fluffy.confirm import PHRASE_FORMAT
-from fluffy.db import connect, default_migrations_dir, migrate, utc_now_iso
-
-
-def destructive_meta(name: str = "delete_project", resource_kind: str = "repo") -> ToolMeta:
-    return ToolMeta(
-        name=name,
-        tags=frozenset({"destructive"}),
-        destructive=DestructiveSpec(
-            resource_kind=resource_kind,
-            summary_from=lambda args, kwargs: (
-                f"This deletes the {resource_kind} `{args[0]}`. This cannot be undone."
-            ),
-        ),
-    )
+from fluffy.db import connect, default_migrations_dir, migrate
 
 
 class Spy:
@@ -265,11 +252,7 @@ def test_benign_names_wrap_fine(guard: Guard, name: str) -> None:
 
 
 def test_whitelisted_tool_name_escapes_wrap_time_safety_net(guard: Guard) -> None:
-    guard.connection.execute(
-        "INSERT INTO action_whitelist (tool, resource_kind, added_ts) VALUES (?, ?, ?)",
-        ("drop_database", "database", utc_now_iso()),
-    )
-    guard.connection.commit()
+    seed_whitelist(guard.connection, "drop_database", "database")
     wrapped: Any = guard.wrap(lambda: "ok", meta=ToolMeta(name="drop_database"))
     assert wrapped() == "ok"
 
