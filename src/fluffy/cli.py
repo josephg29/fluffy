@@ -93,7 +93,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     db_path = Path(args.db).expanduser() if args.db is not None else DEFAULT_DB_PATH
     if not db_path.exists():
-        print(f"fluffy: no state database at {db_path}", file=sys.stderr)
+        print(
+            f"fluffy: no state database at {db_path}\n"
+            "(a Guard creates it on first use; point --db at your guard's db_path)",
+            file=sys.stderr,
+        )
         return 2
     conn = _open_readonly(db_path)
     try:

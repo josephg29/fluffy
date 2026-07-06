@@ -31,7 +31,8 @@ taken); you still `import fluffy` in code.
 One `Guard` per agent process. Wrap one tool of each kind and watch a block
 happen. The whole listing is one runnable script — its state (spend ledger,
 audit log) persists in the db file, so delete `quickstart.db*` to re-run it
-from scratch:
+from scratch. It prompts you twice, playing the human in the loop: type the
+`DELETE <nn>` phrase it shows you, then `approve`:
 
 ```python
 import fluffy
