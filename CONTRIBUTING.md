@@ -6,7 +6,7 @@ Thanks for helping guard the robots. Ground rules first, mechanics second.
 
 - **The core stays stdlib-only.** No runtime dependencies. Framework
   integrations live in `src/fluffy/adapters/` behind optional extras
-  (`pip install fluffy[langchain]`).
+  (`pip install fluffy-guard[langchain]`).
 - **Locked decisions are locked.** The architecture (pipeline order, SQLite
   persistence, exception model, cap semantics, etc.) is documented in the
   build plan's Part I. If a decision proves wrong, open an issue and flag it —

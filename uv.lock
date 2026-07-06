@@ -186,7 +186,7 @@ wheels = [
 ]
 
 [[package]]
-name = "fluffy"
+name = "fluffy-guard"
 source = { editable = "." }
 
 [package.optional-dependencies]

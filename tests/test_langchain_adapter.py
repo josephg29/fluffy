@@ -1,6 +1,6 @@
 """LangChain adapter integration tests (D9).
 
-Skipped gracefully when langchain isn't installed (`pip install fluffy[langchain]`
+Skipped gracefully when langchain isn't installed (`pip install fluffy-guard[langchain]`
 plus the `langchain` package for the agent test). The headline test drives a
 FakeListLLM ReAct agent into a $50 spend against a $25 cap and asserts the
 block surfaces as a normal tool observation the agent loop can relay.

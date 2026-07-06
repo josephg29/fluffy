@@ -15,7 +15,7 @@ Each feature below maps to the promise it fulfills from the agent-safety spec.
 | Permission changes mid-conversation, no restart | `guard.request_permission()` with an approver-chain protocol (one async method), `ConsoleApprover` default, opt-in `GuardianBot(auto_approve_under_cents=100)`; `budget_increase` grants apply to the very next spend (`once` grants consumed atomically inside the spend transaction); `access_grant` gates `restricted`-tagged tools. |
 | Guarding must not slow the agent (<20 ms per guarded call) | D8 budgets CI-enforced on every PR: untagged overhead < 1 ms (measured ~5 µs), guarded spend < 20 ms p95 (measured ~0.09 ms mean), 100-step mixed job < 0.5 s added (measured ~3 ms). Untagged calls touch no I/O at all. |
 | Full auditability | Single `audit_log` with one closed event vocabulary across all four guards (docs/events.md); `fluffy audit tail` / `fluffy audit grep` CLI. |
-| Works with real agent frameworks | LangChain adapter (`fluffy[langchain]`): `guard_tools()` wraps `_run`/`_arun`; blocks surface as `ToolException` with the plain-English message the agent relays. |
+| Works with real agent frameworks | LangChain adapter (`fluffy-guard[langchain]`): `guard_tools()` wraps `_run`/`_arun`; blocks surface as `ToolException` with the plain-English message the agent relays. |
 | Spec §3 acceptance table | Re-run end-to-end against the built wheel in a clean venv on every CI run (`tests/e2e/test_spec_acceptance.py`): secret grep, $50-vs-$25 block, delete confirmation loop, permission approve flow. |
 
 ## Honest limitations (see README threat model)

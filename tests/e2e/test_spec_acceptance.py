@@ -43,7 +43,7 @@ def wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     dist = tmp_path_factory.mktemp("dist")
     proc = _run(["uv", "build", "--wheel", "--out-dir", str(dist)], cwd=REPO_ROOT)
     assert proc.returncode == 0, f"uv build failed:\n{proc.stdout}\n{proc.stderr}"
-    wheels = list(dist.glob("fluffy-*.whl"))
+    wheels = list(dist.glob("fluffy_guard-*.whl"))
     assert len(wheels) == 1, f"expected exactly one wheel in a fresh out-dir, got {wheels}"
     return wheels[0]
 

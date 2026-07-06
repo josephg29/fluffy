@@ -1,4 +1,4 @@
-"""LangChain adapter (decision D9). Requires ``pip install fluffy[langchain]``.
+"""LangChain adapter (decision D9). Requires ``pip install fluffy-guard[langchain]``.
 
 ``guard_tools(tools, guard, metas=...)`` wraps each tool's ``_run``/``_arun``
 in the guard pipeline. :class:`fluffy.Blocked` denials are converted to

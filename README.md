@@ -12,9 +12,12 @@ tools go through SQLite-backed, crash-safe checks. Zero runtime dependencies
 ## Install
 
 ```sh
-pip install fluffy              # core, stdlib-only
-pip install 'fluffy[langchain]' # + the LangChain adapter
+pip install fluffy-guard        # core, stdlib-only
+pip install 'fluffy-guard[langchain]'  # + the LangChain adapter
 ```
+
+The distribution is named `fluffy-guard` (the `fluffy` name on PyPI was
+taken); you still `import fluffy` in code.
 
 ## 5-minute quickstart
 

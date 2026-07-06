@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fluffy"
+name = "fluffy-guard"
 dynamic = ["version"]
 description = "A drop-in guard layer for autonomous agents: secret redaction, hard spend caps, typed confirmation for destructive actions, and in-conversation permission changes."
 readme = "README.md"
