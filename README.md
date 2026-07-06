@@ -67,9 +67,12 @@ charge = guard.wrap(
     ),
 )
 charge(amount_cents=1000)   # $10: fine
-charge(amount_cents=5000)   # raises fluffy.SpendLimitExceeded:
-# "Blocked: $50.00 requested, per-use cap $25.00, $10.00 already spent today;
-#  $15.00 remaining."  <- relay this string to the agent verbatim
+try:
+    charge(amount_cents=5000)
+except fluffy.SpendLimitExceeded as exc:
+    print(exc)  # "Blocked: $50.00 requested, per-use cap $25.00, $10.00
+                #  already spent today; $15.00 remaining."
+                # <- relay this string to the agent verbatim
 
 # --- 3. Destructive actions: typed confirmation over the human channel ------
 delete = guard.wrap(
@@ -92,7 +95,9 @@ except fluffy.ConfirmationRequired as exc:
     phrase = guard.challenge_phrase(exc.challenge_id)      # e.g. "DELETE 42"
     typed = input(f"{exc.summary}\nType {phrase!r} to confirm: ")  # YOUR ui,
     assert guard.confirm(exc.challenge_id, typed)           # not the agent's chat
-    delete("my-project", fluffy_challenge_id=exc.challenge_id)  # runs once
+    # retry with the challenge id; the guard pops this kwarg (the tool never
+    # sees it), consumes the challenge, and lets exactly one call through:
+    delete("my-project", fluffy_challenge_id=exc.challenge_id)
 
 # --- 4. Permissions: raise a cap mid-conversation ---------------------------
 # Section 2 already spent $10 today, so a $40 charge needs $50 of daily
@@ -104,6 +109,9 @@ decision = guard.request_permission_sync(
 )
 if decision.approved:
     charge(amount_cents=4000)   # succeeds exactly once; the grant is consumed
+
+print("quickstart complete — inspect the audit trail:")
+print("  fluffy audit tail --db quickstart.db")
 ```
 
 Every denial inherits from `fluffy.Blocked`, so a host catches one type; every
@@ -111,17 +119,42 @@ message is pre-formatted plain English the agent can relay verbatim.
 
 ## LangChain adapter
 
+A complete, runnable example (no LLM calls — the tool is invoked directly):
+
 ```python
+from langchain_core.tools import tool
+
+from fluffy import Guard, SpendPolicy, SpendSpec, ToolMeta
 from fluffy.adapters.langchain import guard_tools
 
-tools = guard_tools(lc_tools, guard, metas={"buy_gadget": ToolMeta(...)})
-# Blocked -> langchain_core.tools.ToolException(str(e)); set
-# handle_tool_error=True on the tool and the agent loop sees the block as a
-# normal observation it can relay to the user.
+@tool
+def buy_gadget(amount_cents: int) -> str:
+    """Buy a gadget for the given price."""
+    return f"bought a gadget for {amount_cents} cents"
+
+guard = Guard(db_path="langchain-demo.db")
+guard.add_spend_policy(SpendPolicy(card_id="ops"))
+
+tools = guard_tools(
+    [buy_gadget],
+    guard,
+    metas={
+        "buy_gadget": ToolMeta(
+            name="buy_gadget",
+            tags={"spend"},
+            spend=SpendSpec(card_id="ops", amount_from=lambda a, k: k["amount_cents"]),
+        )
+    },
+)
+tools[0].handle_tool_error = True  # blocks become observations, not crashes
+print(tools[0].invoke({"amount_cents": 1000}))  # bought a gadget for 1000 cents
+print(tools[0].invoke({"amount_cents": 9000}))  # Blocked: $90.00 requested, ...
 ```
 
-Tools without a `metas` entry are wrapped untagged (secret resolution +
-redaction only, no I/O).
+Every `fluffy.Blocked` surfaces as `langchain_core.tools.ToolException(str(e))`;
+with `handle_tool_error=True` the agent loop sees the block as a normal tool
+observation it can relay to the user. Tools without a `metas` entry are
+wrapped untagged (secret resolution + redaction only, no I/O).
 
 ## Per-guard configuration reference
 
@@ -160,6 +193,9 @@ function, `guard.wrap(fn)` alone works — `meta` defaults to
 | `per_use_cap_cents` | `2500` | hard cap per call |
 | `daily_cap_cents` | `2500` | hard cap per calendar day |
 | `tz` | `America/Los_Angeles` | timezone that defines "day" (computed at query time; no reset job) |
+
+`add_spend_policy` registers **or replaces**: adding a card_id again swaps in
+the new caps (the ledger and its spent totals are untouched).
 
 Two-phase and atomic: the cap check and the reservation share one
 `BEGIN IMMEDIATE` transaction, so concurrent over-cap racing is impossible.
@@ -206,6 +242,7 @@ One event vocabulary across all four guards — see
 fluffy audit tail -n 50          # columns: ts event decision tool call_id detail_json
 fluffy audit grep stripe.charge  # case-insensitive substring match
 fluffy --version
+fluffy audit tail --help         # every flag, e.g. --db PATH
 ```
 
 On a terminal the output starts with a header row (and empty results say

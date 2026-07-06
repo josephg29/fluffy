@@ -41,7 +41,7 @@ def main() -> None:
             delete_project,
             meta=ToolMeta(
                 name="delete_project",
-                tags=frozenset({"destructive"}),
+                tags={"destructive"},
                 destructive=DestructiveSpec(resource_kind="repo", summary_from=summarize),
             ),
         )

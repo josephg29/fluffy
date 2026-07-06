@@ -95,3 +95,25 @@ def test_unknown_secret_is_blocked_and_keyerror() -> None:
         "Blocked: no secret named 'missing_key' in the secret store; "
         "store it first with guard.secret_store.put('missing_key', ...)."
     )
+
+
+def test_malformed_handle_fails_closed() -> None:
+    from fluffy.exceptions import GuardConfigError
+
+    store = MemorySecretStore()
+    store.put("good", "value")
+    interceptor = SecretResolveInterceptor(store)
+    for bad in ("{{secret:}}", "{{secret:bad name!}}", "{{secret:unclosed"):
+        ctx = _ctx(args=(bad,))
+        with pytest.raises(GuardConfigError, match="malformed secret handle"):
+            interceptor.before(ctx)
+    # a valid handle in the same text still resolves normally
+    ctx = _ctx(args=("{{secret:good}}",))
+    interceptor.before(ctx)
+    assert ctx.args[0] == "value"
+
+
+def test_invalid_secret_name_message_explains_the_rule() -> None:
+    store = MemorySecretStore()
+    with pytest.raises(ValueError, match=r"names must match \[A-Za-z0-9_.-\]\+"):
+        store.put("bad name!", "v")

@@ -13,6 +13,14 @@ agent following the README cold). No schema changes; drop-in upgrade.
   end-to-end under a pty.
 - **`fluffy audit tail -n -1` no longer dumps the entire table** (a negative
   SQLite `LIMIT` means "no limit"); `-n` now rejects negatives.
+- **`tags={"spend"}` without a `SpendSpec` now fails at `wrap()` time**
+  (`GuardConfigError`), matching the destructive gate's symmetry checks — a
+  spec without the tag fails too. Previously the misconfiguration surfaced
+  only when the tool was first called.
+- **Malformed secret handles fail closed.** Text containing `{{secret:` that
+  doesn't parse as a valid handle (empty name, illegal characters, unclosed
+  braces) raises `GuardConfigError` instead of silently passing the literal
+  through to the tool.
 
 ## Changed
 
@@ -39,6 +47,13 @@ agent following the README cold). No schema changes; drop-in upgrade.
 
 - README states the **Python 3.11+** requirement and explains pip's
   misleading `No matching distribution found` on older interpreters.
+- The quickstart catches its own demonstration `SpendLimitExceeded` (it used
+  to crash the script at section 2), explains the `fluffy_challenge_id`
+  retry kwarg, and ends by pointing at `fluffy audit tail`. Both README code
+  blocks (quickstart and the now-complete LangChain example) are verified to
+  run verbatim.
+- `add_spend_policy`'s register-or-replace semantics and the secret-name
+  character rule are spelled out.
 - Documented approver-chain exhaustion (all abstain / empty chain ⇒ denied),
   `confirm()` idempotency before consumption, and the CLI column order in
   `docs/events.md`.

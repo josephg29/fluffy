@@ -66,7 +66,7 @@ def main() -> None:
             make_stripe_charge(),
             meta=ToolMeta(
                 name="stripe.charge",
-                tags=frozenset({"spend"}),
+                tags={"spend"},
                 spend=SpendSpec(
                     card_id="demo",
                     amount_from=lambda args, kwargs: kwargs["amount_cents"],

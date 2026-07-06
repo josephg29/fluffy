@@ -91,7 +91,17 @@ def check_wrap_meta(conn: sqlite3.Connection, meta: ToolMeta) -> None:
     - The ``"destructive"`` tag without a ``DestructiveSpec`` raises: the gate
       needs a resource kind and a summary, and only the meta is required to
       decide that — so it fails here, at wrap time, not at call time.
+    - The same tag/spec symmetry holds for spend: ``"spend"`` without a
+      ``SpendSpec`` (or a spec without the tag) is a misconfiguration the
+      meta alone can prove, so it too fails at wrap time.
     """
+    if meta.spend is not None and "spend" not in meta.tags:
+        raise GuardConfigError(
+            f"tool {meta.name!r} declares a SpendSpec but is not tagged 'spend'; "
+            "add the tag or drop the spec"
+        )
+    if "spend" in meta.tags and meta.spend is None:
+        raise GuardConfigError(f"tool {meta.name!r} is tagged 'spend' but has no SpendSpec")
     if meta.destructive is not None and "destructive" not in meta.tags:
         raise GuardConfigError(
             f"tool {meta.name!r} declares a DestructiveSpec but is not tagged "

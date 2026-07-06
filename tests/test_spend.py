@@ -285,12 +285,18 @@ def test_missing_policy_raises_config_error_no_residue(guard: Guard) -> None:
     assert ledger_rows(guard.connection, "unknown-card") == []
 
 
-def test_spend_tag_without_spec_raises_config_error(spend_guard: Guard) -> None:
-    wrapped: Any = spend_guard.wrap(
-        lambda **kwargs: "ok", meta=ToolMeta(name="pay", tags=frozenset({"spend"}))
-    )
+def test_spend_tag_without_spec_raises_config_error_at_wrap(spend_guard: Guard) -> None:
     with pytest.raises(GuardConfigError, match="no SpendSpec"):
-        wrapped(amount_cents=100)
+        spend_guard.wrap(
+            lambda **kwargs: "ok", meta=ToolMeta(name="pay", tags=frozenset({"spend"}))
+        )
+
+
+def test_spend_spec_without_tag_raises_config_error_at_wrap(spend_guard: Guard) -> None:
+    meta = spend_meta()
+    untagged = ToolMeta(name=meta.name, spend=meta.spend)  # spec, but no "spend" tag
+    with pytest.raises(GuardConfigError, match="not tagged 'spend'"):
+        spend_guard.wrap(lambda **kwargs: "ok", meta=untagged)
 
 
 def test_non_positive_amount_raises_config_error(spend_guard: Guard) -> None:

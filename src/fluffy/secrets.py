@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Protocol, runtime_checkable
 
 from .context import CallContext
-from .exceptions import UnknownSecret
+from .exceptions import GuardConfigError, UnknownSecret
 
 __all__ = [
     "HANDLE_RE",
@@ -53,7 +53,10 @@ class MemorySecretStore:
 
     def put(self, name: str, value: str) -> None:
         if not _NAME_RE.fullmatch(name):
-            raise ValueError(f"invalid secret name: {name!r}")
+            raise ValueError(
+                f"invalid secret name {name!r}; names must match [A-Za-z0-9_.-]+ "
+                "(letters, digits, underscore, dot, hyphen — no spaces)"
+            )
         self._secrets[name] = value
 
     def resolve(self, name: str) -> str:
@@ -100,12 +103,24 @@ def _walk(value: Any, leaf: Callable[[str], str]) -> Any:
 
 
 def _resolve_leaf(store: SecretStore) -> Callable[[str], str]:
-    """String transform replacing ``{{secret:name}}`` handles with real values."""
+    """String transform replacing ``{{secret:name}}`` handles with real values.
+
+    Fails closed on malformed handles: text still containing ``{{secret:``
+    after substitution (empty name, illegal characters, unclosed braces) is a
+    typo'd handle, and silently passing the literal through would hand the
+    tool a broken credential.
+    """
 
     def leaf(text: str) -> str:
         if _HANDLE_PREFIX not in text:  # fast path: preserve identity, skip the regex
             return text
-        return HANDLE_RE.sub(lambda m: store.resolve(m.group(1)), text)
+        resolved = HANDLE_RE.sub(lambda m: store.resolve(m.group(1)), text)
+        if _HANDLE_PREFIX in resolved:
+            raise GuardConfigError(
+                "malformed secret handle in tool arguments; handles look like "
+                "'{{secret:name}}' with name matching [A-Za-z0-9_.-]+"
+            )
+        return resolved
 
     return leaf
 
