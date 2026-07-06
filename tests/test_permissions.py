@@ -178,6 +178,7 @@ def test_persistent_grant_survives_guard_restart(tmp_path: Path) -> None:
 
 async def test_guardian_bot_auto_approves_under_threshold(tmp_path: Path) -> None:
     with Guard(db_path=tmp_path / "state.db", approvers=[GuardianBot(100)]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         decision = await g.request_permission(budget_req(50))
         assert decision.approved is True
         assert decision.decider == "guardian_bot"
@@ -190,6 +191,7 @@ async def test_guardian_bot_auto_approves_under_threshold(tmp_path: Path) -> Non
 async def test_guardian_bot_abstains_over_threshold_falls_through(tmp_path: Path) -> None:
     fallback = deny_all("human")
     with Guard(db_path=tmp_path / "state.db", approvers=[GuardianBot(100), fallback]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         decision = await g.request_permission(budget_req(1000))
         assert decision.approved is False
         assert decision.decider == "human"
@@ -198,6 +200,7 @@ async def test_guardian_bot_abstains_over_threshold_falls_through(tmp_path: Path
 
 async def test_guardian_bot_alone_over_threshold_denies_exhausted(tmp_path: Path) -> None:
     with Guard(db_path=tmp_path / "state.db", approvers=[GuardianBot(100)]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         decision = await g.request_permission(budget_req(1000))
         assert decision.approved is False
         assert decision.decider == "exhausted"
@@ -214,6 +217,7 @@ async def test_guardian_bot_always_abstains_on_access_grant(tmp_path: Path) -> N
 
 async def test_guardian_bot_abstains_on_malformed_value(tmp_path: Path) -> None:
     with Guard(db_path=tmp_path / "state.db", approvers=[GuardianBot(100)]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         req = PermissionRequest(
             kind="budget_increase", subject="ops", value="fifty", duration="once", rationale="?"
         )
@@ -225,6 +229,7 @@ async def test_guardian_bot_abstains_on_malformed_value(tmp_path: Path) -> None:
 
 async def test_denied_request_writes_no_row_and_message_is_usable(tmp_path: Path) -> None:
     with Guard(db_path=tmp_path / "state.db", approvers=[deny_all()]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         decision = await g.request_permission(budget_req(1500))
         assert decision.approved is False
         assert isinstance(decision.message, str) and decision.message.strip()
@@ -239,6 +244,7 @@ async def test_console_approver_abstains_without_tty(tmp_path: Path) -> None:
     # pytest runs with a non-TTY stdin; no input_fn injected -> abstain, no hang.
     assert await ConsoleApprover().decide(budget_req(1500)) is None
     with Guard(db_path=tmp_path / "state.db") as g:  # default chain = [ConsoleApprover]
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         decision = await g.request_permission(budget_req(1500))
         assert decision.approved is False
         assert decision.decider == "exhausted"
@@ -386,6 +392,7 @@ async def test_chain_first_non_abstain_wins(tmp_path: Path) -> None:
     second = approve_all("second")
     third = deny_all("third")
     with Guard(db_path=tmp_path / "state.db", approvers=[abstain(), second, third]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         decision = await g.request_permission(budget_req(1500))
         assert decision.approved is True
         assert decision.decider == "second"
@@ -394,6 +401,7 @@ async def test_chain_first_non_abstain_wins(tmp_path: Path) -> None:
 
 async def test_granted_audit_row_carries_decider(tmp_path: Path) -> None:
     with Guard(db_path=tmp_path / "state.db", approvers=[approve_all("boss")]) as g:
+        g.add_spend_policy(SpendPolicy(card_id="ops"))
         await g.request_permission(budget_req(1500))
         row = g.audit_tail(5)[-1]
         assert row["event"] == "permission_granted"

@@ -7,6 +7,7 @@ from .exceptions import (
     GuardConfigError,
     PermissionDenied,
     SpendLimitExceeded,
+    UnknownSecret,
 )
 from .guard import Guard, Interceptor
 from .permissions import (
@@ -20,7 +21,7 @@ from .redact import RedactionFilter, redact
 from .secrets import MemorySecretStore, SecretStore
 from .spend import SpendPolicy
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "ApprovalChain",
@@ -44,5 +45,6 @@ __all__ = [
     "SpendPolicy",
     "SpendSpec",
     "ToolMeta",
+    "UnknownSecret",
     "redact",
 ]

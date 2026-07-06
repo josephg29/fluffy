@@ -22,18 +22,37 @@ import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from . import __version__
 from .audit import audit_grep, audit_tail
 from .db import DEFAULT_DB_PATH
 
 __all__ = ["main"]
 
+#: Column order of every output line (also the header row on a terminal).
+COLUMNS = ("ts", "event", "decision", "tool", "call_id", "detail_json")
 
-def _print_rows(rows: Iterable[sqlite3.Row]) -> None:
+
+def _interactive() -> bool:
+    """Is stdout a terminal? (Seam for tests; capture replaces stdout.)"""
+    isatty = getattr(sys.stdout, "isatty", None)
+    return bool(isatty and isatty())
+
+
+def _print_rows(rows: Iterable[sqlite3.Row], empty_message: str) -> None:
+    """One line per event, ``COLUMNS`` order.
+
+    A header row and a friendly empty-result message appear only on a
+    terminal, so piped output stays clean machine-readable lines.
+    """
+    interactive = _interactive()
+    printed = False
     for row in rows:
-        print(
-            f"{row['ts']}  {row['event']}  {row['decision']}  {row['tool']}"
-            f"  {row['call_id']}  {row['detail_json']}"
-        )
+        if interactive and not printed:
+            print("  ".join(COLUMNS))
+        printed = True
+        print("  ".join(str(row[col]) for col in COLUMNS))
+    if not printed and interactive:
+        print(empty_message)
 
 
 def _open_readonly(path: Path) -> sqlite3.Connection:
@@ -47,19 +66,27 @@ def _build_parser() -> argparse.ArgumentParser:
     common.add_argument("--db", default=None, help=f"state database (default {DEFAULT_DB_PATH})")
 
     parser = argparse.ArgumentParser(prog="fluffy", description="fluffy guard-layer CLI")
+    parser.add_argument("--version", action="version", version=f"fluffy-guard {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     audit = sub.add_parser("audit", help="inspect the audit log")
     audit_sub = audit.add_subparsers(dest="audit_command", required=True)
 
     tail = audit_sub.add_parser("tail", parents=[common], help="show the most recent audit events")
-    tail.add_argument("-n", type=int, default=50, help="number of events (default 50)")
+    tail.add_argument("-n", type=_non_negative, default=50, help="number of events (default 50)")
 
     grep = audit_sub.add_parser("grep", parents=[common], help="search audit events for a term")
     grep.add_argument("term", help="substring to search for (case-insensitive)")
-    grep.add_argument("-n", type=int, default=200, help="max matches shown (default 200)")
+    grep.add_argument("-n", type=_non_negative, default=200, help="max matches shown (default 200)")
 
     return parser
+
+
+def _non_negative(value: str) -> int:
+    n = int(value)
+    if n < 0:  # a negative SQLite LIMIT means "no limit" — never dump the table
+        raise argparse.ArgumentTypeError(f"-n must be >= 0, got {n}")
+    return n
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -71,9 +98,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     conn = _open_readonly(db_path)
     try:
         if args.audit_command == "tail":
-            _print_rows(audit_tail(conn, args.n))
+            _print_rows(audit_tail(conn, args.n), "(no audit events yet)")
         else:
-            _print_rows(audit_grep(conn, args.term, args.n))
+            _print_rows(
+                audit_grep(conn, args.term, args.n),
+                f"(no audit events match {args.term!r})",
+            )
     except sqlite3.OperationalError as exc:
         if "no such table" not in str(exc):
             raise

@@ -84,3 +84,47 @@ def test_cli_opens_read_only(populated_db: Path) -> None:
     before = populated_db.read_bytes()
     assert main(["audit", "tail", "--db", str(populated_db)]) == 0
     assert populated_db.read_bytes() == before
+
+
+# ------------------------------------------------------------- UX affordances
+
+
+def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    import fluffy
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--version"])
+    assert excinfo.value.code == 0
+    assert f"fluffy-guard {fluffy.__version__}" in capsys.readouterr().out
+
+
+def test_negative_n_is_rejected_not_a_full_dump(
+    populated_db: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A negative SQLite LIMIT means "no limit"; the CLI must refuse it.
+    with pytest.raises(SystemExit) as excinfo:
+        main(["audit", "tail", "-n", "-1", "--db", str(populated_db)])
+    assert excinfo.value.code == 2
+    assert "-n must be >= 0" in capsys.readouterr().err
+
+
+def test_interactive_header_and_empty_message(
+    populated_db: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("fluffy.cli._interactive", lambda: True)
+    assert main(["audit", "tail", "-n", "2", "--db", str(populated_db)]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert lines[0].split("  ")[:3] == ["ts", "event", "decision"]
+    assert len(lines) == 3  # header + 2 events
+
+    assert main(["audit", "grep", "no-such-term", "--db", str(populated_db)]) == 0
+    assert "no audit events match 'no-such-term'" in capsys.readouterr().out
+
+
+def test_piped_output_has_no_header(populated_db: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # capsys stdout is not a tty: every line must be a bare event row.
+    assert main(["audit", "tail", "-n", "2", "--db", str(populated_db)]) == 0
+    for line in capsys.readouterr().out.strip().splitlines():
+        assert not line.startswith("ts  ")

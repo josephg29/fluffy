@@ -77,3 +77,21 @@ def test_redact_interceptor_masks_error_args() -> None:
     SecretRedactInterceptor(store).after(ctx)
     assert "real-value" not in str(ctx.error)
     assert "{{secret:pw}}" in str(ctx.error)
+
+
+def test_unknown_secret_is_blocked_and_keyerror() -> None:
+    from fluffy import Blocked, UnknownSecret
+
+    store = MemorySecretStore()
+    with pytest.raises(UnknownSecret) as excinfo:
+        store.resolve("missing_key")
+    exc = excinfo.value
+    assert isinstance(exc, Blocked)
+    assert isinstance(exc, KeyError)  # pre-0.2 compat
+    assert exc.name == "missing_key"
+    assert exc.payload == {"name": "missing_key"}
+    # plain, agent-relayable message (not KeyError's repr form)
+    assert str(exc) == (
+        "Blocked: no secret named 'missing_key' in the secret store; "
+        "store it first with guard.secret_store.put('missing_key', ...)."
+    )

@@ -6,23 +6,32 @@ permission changes — at well under 20 ms per guarded call.
 
 fluffy is a library, not a proxy: your host framework imports it and wraps
 tool callables. Untagged tools pay ~5 µs of overhead and touch no I/O; guarded
-tools go through SQLite-backed, crash-safe checks. Zero runtime dependencies
-(stdlib only). MIT licensed.
+tools go through SQLite-backed, crash-safe checks. The core install has zero
+runtime dependencies (stdlib only). MIT licensed.
 
 ## Install
 
+Requires **Python 3.11+**.
+
 ```sh
 pip install fluffy-guard        # core, stdlib-only
-pip install 'fluffy-guard[langchain]'  # + the LangChain adapter
+pip install 'fluffy-guard[langchain]'  # + the LangChain adapter (pulls in langchain-core)
 ```
 
 The distribution is named `fluffy-guard` (the `fluffy` name on PyPI was
 taken); you still `import fluffy` in code.
 
+> On an older Python (macOS ships 3.9), pip reports the unhelpful
+> `No matching distribution found for fluffy-guard` — that means your
+> `python3` is too old, not that the package is missing. Create the venv
+> with `python3.11` (or newer) and install again.
+
 ## 5-minute quickstart
 
 One `Guard` per agent process. Wrap one tool of each kind and watch a block
-happen:
+happen. The whole listing is one runnable script — its state (spend ledger,
+audit log) persists in the db file, so delete `quickstart.db*` to re-run it
+from scratch:
 
 ```python
 import fluffy
@@ -30,7 +39,9 @@ from fluffy import (
     DestructiveSpec, Guard, PermissionRequest, SpendPolicy, SpendSpec, ToolMeta,
 )
 
-guard = Guard(db_path="~/.fluffy/state.db")   # opens SQLite, installs redaction
+guard = Guard(db_path="quickstart.db")   # opens SQLite, installs redaction
+# (production default: db_path="~/.fluffy/state.db"; `with Guard(...) as guard:`
+#  closes the DB and uninstalls the logging filter on exit)
 
 # --- 1. Secrets: agents only ever see handles -------------------------------
 guard.secret_store.put("stripe_key", "sk_live_...real value...")
@@ -79,13 +90,16 @@ except fluffy.ConfirmationRequired as exc:
     # Show exc.summary to the human. The phrase is DELIBERATELY not in the
     # exception the agent sees — the HOST fetches it out-of-band:
     phrase = guard.challenge_phrase(exc.challenge_id)      # e.g. "DELETE 42"
-    # ...human types it into YOUR ui, not the agent's chat...
-    assert guard.confirm(exc.challenge_id, typed_phrase_from_human)
+    typed = input(f"{exc.summary}\nType {phrase!r} to confirm: ")  # YOUR ui,
+    assert guard.confirm(exc.challenge_id, typed)           # not the agent's chat
     delete("my-project", fluffy_challenge_id=exc.challenge_id)  # runs once
 
 # --- 4. Permissions: raise a cap mid-conversation ---------------------------
+# Section 2 already spent $10 today, so a $40 charge needs $50 of daily
+# headroom: a $30 increase lifts both caps to $55. The default approver is
+# the console — this line prompts YOU at the terminal; answer y.
 decision = guard.request_permission_sync(
-    PermissionRequest(kind="budget_increase", subject="ops", value=1500,
+    PermissionRequest(kind="budget_increase", subject="ops", value=3000,
                       duration="once", rationale="the gadget costs $40")
 )
 if decision.approved:
@@ -117,17 +131,21 @@ redaction only, no I/O).
 |---|---|---|
 | `db_path` | `~/.fluffy/state.db` | SQLite state (WAL, `busy_timeout=5000`); migrations run at init |
 | `secret_store` | `MemorySecretStore()` | anything implementing the `SecretStore` protocol (`put/resolve/known_values/items`) |
-| `approvers` | `[ConsoleApprover()]` | the permission approver chain, first non-abstain wins |
+| `approvers` | `[ConsoleApprover()]` | the permission approver chain, first non-abstain wins; if every approver abstains (or the chain is empty) the request is denied |
 
 `ToolMeta(name, tags, spend, destructive)` — tags in `{"spend",
 "destructive", "restricted"}` route a call through the guard pipeline; any
-other call takes the no-I/O fast path.
+other call takes the no-I/O fast path. For an untagged, normally-named
+function, `guard.wrap(fn)` alone works — `meta` defaults to
+`ToolMeta(name=fn.__name__)` (lambdas and partials still need an explicit
+`ToolMeta`).
 
 ### Secrets & redaction (D4)
 
 - Handles look like `{{secret:name}}`; values are substituted at the last
   moment before execution and masked back on the way out (raw, URL-encoded,
-  and base64 forms).
+  and base64 forms). A handle naming a secret that was never stored raises
+  `fluffy.UnknownSecret` (a `Blocked` subclass).
 - Pattern scrub: Luhn-valid 13–19-digit card numbers, `sk-…`/`sk_live_…`/
   `ghp_…`/`AKIA…` keys, and 32+-char tokens with ≥ 4.5 bits/char Shannon
   entropy.
@@ -169,6 +187,9 @@ integer cents.
   spend caps become base + active grants, `once` grants consumed atomically by
   the spend that uses them) and `access_grant` (tools tagged `"restricted"`
   deny with `PermissionDenied` unless a live grant for the tool name exists).
+  A `budget_increase` for a card with no registered spend policy raises
+  `GuardConfigError` — a grant that nothing could spend against is a
+  misconfiguration, not a request.
 - Approvers implement one async method `decide(req) -> Decision | None`
   (`None` = abstain). Ships with `ConsoleApprover` (default) and
   `GuardianBot(auto_approve_under_cents=100)` — off unless you add it to the
@@ -182,9 +203,13 @@ One event vocabulary across all four guards — see
 [docs/events.md](docs/events.md). Inspect with `guard.audit_tail(n)` or:
 
 ```sh
-fluffy audit tail -n 50
-fluffy audit grep stripe.charge
+fluffy audit tail -n 50          # columns: ts event decision tool call_id detail_json
+fluffy audit grep stripe.charge  # case-insensitive substring match
+fluffy --version
 ```
+
+On a terminal the output starts with a header row (and empty results say
+so); piped output is bare lines for scripts.
 
 ## Performance
 
@@ -234,4 +259,4 @@ uv run mypy --strict src
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Release notes:
-[docs/RELEASE_NOTES_0.1.0.md](docs/RELEASE_NOTES_0.1.0.md).
+[docs/RELEASE_NOTES_0.1.1.md](docs/RELEASE_NOTES_0.1.1.md).

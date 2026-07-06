@@ -135,6 +135,10 @@ class SpendInterceptor:
         self._policies[policy.card_id] = policy
         self._zones[policy.card_id] = zone
 
+    def has_policy(self, card_id: str) -> bool:
+        """Is a policy registered for ``card_id``?"""
+        return card_id in self._policies
+
     def effective_caps(self, card_id: str, now: datetime) -> Caps:
         """The single cap-lookup seam: base policy + active grants (D7).
 

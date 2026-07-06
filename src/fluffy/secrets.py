@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Protocol, runtime_checkable
 
 from .context import CallContext
+from .exceptions import UnknownSecret
 
 __all__ = [
     "HANDLE_RE",
@@ -59,7 +60,7 @@ class MemorySecretStore:
         try:
             return self._secrets[name]
         except KeyError:
-            raise KeyError(f"unknown secret: {name!r}") from None
+            raise UnknownSecret(name=name) from None
 
     def known_values(self) -> Iterable[str]:
         return tuple(value for _, value in self.items())

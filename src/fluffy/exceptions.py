@@ -18,6 +18,7 @@ __all__ = [
     "GuardConfigError",
     "PermissionDenied",
     "SpendLimitExceeded",
+    "UnknownSecret",
 ]
 
 
@@ -130,6 +131,31 @@ class ConfirmationRequired(Blocked):
             reason="confirmation_required",
             call_id=call_id,
         )
+
+
+class UnknownSecret(Blocked, KeyError):
+    """A ``{{secret:name}}`` handle references a secret that was never stored.
+
+    Inherits :class:`KeyError` too, so pre-0.2 code catching ``KeyError``
+    keeps working; new code should catch :class:`Blocked`.
+    """
+
+    _payload_fields = ("name",)
+
+    name: str
+
+    def __init__(self, *, name: str, call_id: str = "") -> None:
+        self.name = name
+        super().__init__(
+            f"Blocked: no secret named {name!r} in the secret store; "
+            f"store it first with guard.secret_store.put({name!r}, ...).",
+            reason="unknown_secret",
+            call_id=call_id,
+        )
+
+    # KeyError.__str__ would repr() the message (quotes around everything);
+    # keep the plain, agent-relayable form.
+    __str__ = Exception.__str__
 
 
 class PermissionDenied(Blocked):

@@ -36,6 +36,7 @@ from .audit import AuditInterceptor, audit_tail
 from .confirm import ConfirmInterceptor, check_wrap_meta
 from .context import CallContext, Decision, ToolMeta
 from .db import utc_now_iso
+from .exceptions import GuardConfigError
 from .permissions import (
     Approver,
     ConsoleApprover,
@@ -150,14 +151,28 @@ class Guard:
     # ------------------------------------------------------------------- wrap
 
     def wrap(
-        self, tool_fn: Callable[P, R], meta: ToolMeta
+        self, tool_fn: Callable[P, R], meta: ToolMeta | None = None
     ) -> Callable[P, R] | Callable[P, Coroutine[Any, Any, R]]:
         """Wrap a sync or async callable in the guard pipeline.
+
+        ``meta`` may be omitted for an untagged tool with a usable
+        ``__name__`` — it defaults to ``ToolMeta(name=tool_fn.__name__)``
+        (fast path: secret resolution + redaction only). Lambdas and partials
+        have no usable name, and anything tagged needs a spec, so those still
+        take an explicit ``ToolMeta``.
 
         Raises :class:`fluffy.GuardConfigError` here — not at call time — for
         the D6 safety net: a destructive-looking tool name with no
         ``DestructiveSpec`` and no whitelist entry.
         """
+        if meta is None:
+            name = getattr(tool_fn, "__name__", "")
+            if not name or name == "<lambda>":
+                raise GuardConfigError(
+                    "wrap() needs meta=ToolMeta(name=...) for callables without a "
+                    "usable __name__ (lambdas, functools.partial, ...)"
+                )
+            meta = ToolMeta(name=name)
         check_wrap_meta(self.connection, meta)
         guarded = bool(GUARD_TAGS.intersection(meta.tags))
         before_chain = self._before_chain if guarded else self._fast_before
@@ -244,7 +259,18 @@ class Guard:
         an approver may set ``Decision.expires_in_s`` — never the requesting
         agent's; without it, grants have no expiry (``once`` grants still die
         on first use).
+
+        A ``budget_increase`` for a card with no registered spend policy is a
+        misconfiguration (the grant could never be spent against), so it
+        raises :class:`fluffy.GuardConfigError` instead of minting a dead
+        grant.
         """
+        if req.kind == "budget_increase" and not self._spend.has_policy(req.subject):
+            raise GuardConfigError(
+                f"no spend policy registered for card {req.subject!r}; add it with "
+                f"guard.add_spend_policy(SpendPolicy(card_id={req.subject!r})) "
+                "before requesting a budget increase"
+            )
         return await self._broker.request(req)
 
     def request_permission_sync(self, req: PermissionRequest) -> Decision:
@@ -263,6 +289,13 @@ class Guard:
         ``fluffy_challenge_id=<challenge_id>``. ``remember=True`` also
         whitelists the (tool, resource_kind) so future matching calls skip
         the gate.
+
+        Idempotent until consumed: re-confirming an already-confirmed,
+        not-yet-used challenge returns ``True`` again. Single-use is enforced
+        at the retry (the challenge is consumed by the call that presents
+        it), not here — a consumed challenge makes ``confirm()`` return
+        ``False`` and any further retry raises a fresh
+        :class:`ConfirmationRequired`.
         """
         return self._confirm.confirm(challenge_id, typed_phrase, remember=remember)
 

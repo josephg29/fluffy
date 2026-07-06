@@ -10,7 +10,9 @@ fluffy audit tail -n 50 [--db PATH]
 fluffy audit grep <term> [--db PATH]
 ```
 
-Each row is `(call_id, ts, tool, event, decision, detail_json)`. `call_id`
+Each row is `(call_id, ts, tool, event, decision, detail_json)`; the CLI
+prints the same fields time-first — `ts event decision tool call_id
+detail_json` — and shows that header row when run on a terminal. `call_id`
 ties every event of one tool call together (permission-broker events use the
 request id). This is the complete, closed vocabulary; new events must be added
 to this table in the same PR that emits them.
