@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>fluffy — guard layer for autonomous agents</title>
+<meta name="description" content="fluffy is a drop-in guard layer for autonomous agents: secret redaction, hard spend caps, typed confirmation for destructive actions, and in-conversation permission changes — at <20ms per guarded call." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          bg:      "#0f0f14",
+          surface: "#1a1a24",
+          raised:  "#232332",
+          border:  "#2e2e3e",
+          ink:     "#e4e4ec",
+          ink2:    "#9898b0",
+          ink3:    "#686880",
+          green:   "#7ecf8a",
+          amber:   "#e5b85c",
+          red:     "#e0556a",
+          blue:    "#6cb6e6",
+          purple:  "#c792ea",
+        },
+        fontFamily: {
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  :root {
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  html, body {
+    background: #0f0f14;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: #e4e4ec;
+    font-size: 14px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .h-display { font-weight: 700; letter-spacing: -0.02em; color: #e4e4ec; }
+  .label { font-size: 11px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #686880; }
+
+  /* code blocks */
+  pre.code {
+    background: #1a1a24; border: 1px solid #2e2e3e; color: #e4e4ec;
+    padding: 16px 18px; border-radius: 5px; overflow-x: auto;
+    font-size: 13px; line-height: 1.55;
+  }
+  .kw { color: #c792ea; } .fn { color: #6cb6e6; }
+  .str { color: #7ecf8a; } .cm { color: #686880; }
+  .num { color: #e5b85c; } .op { color: #9898b0; }
+
+  /* feature cards */
+  .fcard {
+    background: #1a1a24; border: 1px solid #2e2e3e; border-radius: 5px;
+    padding: 24px; transition: border-color 180ms ease, transform 160ms var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .fcard:hover { border-color: #6cb6e6; transform: translateY(-2px); }
+  }
+  .fcard .icon { font-size: 20px; }
+
+  /* links */
+  a.link { color: #6cb6e6; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #2e2e3e; transition: text-decoration-color 160ms ease; }
+  a.link:hover { text-decoration-color: #6cb6e6; }
+
+  /* buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; padding: 10px 20px; border-radius: 5px;
+    transition: background 180ms ease, transform 140ms var(--ease-out);
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: #6cb6e6; color: #0f0f14; }
+  .btn-primary:hover { background: #89cfef; }
+  .btn-outline { background: transparent; color: #e4e4ec; border: 1px solid #2e2e3e; }
+  .btn-outline:hover { border-color: #6cb6e6; }
+
+  .btn .arrow { display: inline-block; transition: transform 180ms var(--ease-out); }
+  .btn:hover .arrow { transform: translateX(3px); }
+
+  /* ascii dividers */
+  .divider { color: #2e2e3e; white-space: pre; user-select: none; font-size: 12px; }
+
+  /* perf bar */
+  .perf-bar { background: #232332; border-radius: 4px; overflow: hidden; height: 6px; }
+  .perf-bar-fill { background: #7ecf8a; height: 100%; border-radius: 4px; width: 0%; transition: width 1s var(--ease-out); }
+  .perf-bar-fill.in { width: 92%; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fcard, .btn { transition: none !important; }
+  }
+</style>
+</head>
+
+<body class="max-w-4xl mx-auto px-6">
+
+<!-- ── HERO ── -->
+<section class="pt-24 sm:pt-32 pb-16">
+  <p class="label">fluffy v0.1.1 &mdash; mit licensed</p>
+  <h1 class="h-display text-[52px] sm:text-[80px] leading-[0.94] mt-4">
+    guard your<span class="text-green"> agents</span>
+  </h1>
+  <p class="mt-6 text-lg sm:text-xl text-ink max-w-2xl leading-relaxed">
+    a drop-in safety layer for autonomous agents. secrets stay secret, spend stays capped,
+    destructive actions demand confirmation, and permissions change mid-conversation —
+    all at <span class="text-green font-semibold">&lt;20 ms</span> per guarded call.
+  </p>
+
+  <div class="mt-10 flex flex-wrap gap-4">
+    <a href="https://github.com/josephg29/fluffy" class="btn btn-primary" target="_blank" rel="noopener">
+      view on github <span class="arrow">&rarr;</span>
+    </a>
+    <a href="https://pypi.org/project/fluffy/" class="btn btn-outline" target="_blank" rel="noopener">
+      pip install fluffy
+    </a>
+  </div>
+</section>
+
+<pre class="divider">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</pre>
+
+<!-- ── THE PROBLEM ── -->
+<section class="py-16 sm:py-20">
+  <p class="label">// 01 &mdash; the problem</p>
+  <h2 class="h-display text-2xl sm:text-3xl mt-4 max-w-2xl leading-tight">
+    agents are powerful.<br/>they're also unguarded.
+  </h2>
+  <p class="mt-6 text-ink2 max-w-2xl">
+    give an LLM access to your stripe keys, your database, your infrastructure — and you're
+    one prompt away from a $10,000 bill or a dropped production table. fluffy sits between
+    the agent and the world, enforcing rules you set <em>before</em> anything goes wrong.
+  </p>
+</section>
+
+<pre class="divider">────────────────────────────────────────────────────────────────────────────────</pre>
+
+<!-- ── FOUR GUARDS ── -->
+<section class="py-16 sm:py-20">
+  <p class="label">// 02 &mdash; four guards, one pipeline</p>
+  <h2 class="h-display text-2xl sm:text-3xl mt-4 max-w-2xl leading-tight">
+    what fluffy protects.
+  </h2>
+
+  <div class="mt-10 grid sm:grid-cols-2 gap-5">
+
+    <!-- secret redaction -->
+    <div class="fcard">
+      <p class="icon">🔐</p>
+      <h3 class="h-display text-lg mt-3">secret redaction</h3>
+      <p class="text-sm mt-3 text-ink2 leading-relaxed">
+        register secrets once. agents and transcripts only ever see
+        <code class="text-purple">{{secret:name}}</code> handles. real values
+        are substituted at the last moment before execution and scrubbed from
+        results, logs, audit trails, and exception traces.
+      </p>
+      <p class="mt-3 text-xs text-ink3">
+        two-layer: known-value + pattern scrub (luhn cards, api keys, high-entropy tokens)
+      </p>
+    </div>
+
+    <!-- spend caps -->
+    <div class="fcard">
+      <p class="icon">💳</p>
+      <h3 class="h-display text-lg mt-3">hard spend caps</h3>
+      <p class="text-sm mt-3 text-ink2 leading-relaxed">
+        per-use and daily caps per payment card, enforced at the database level with
+        atomic check-and-reserve transactions. concurrent over-cap spending is
+        structurally impossible — two racing $15 calls against a $25 daily cap:
+        exactly one succeeds, every time.
+      </p>
+      <p class="mt-3 text-xs text-ink3">
+        default $25/day · timezone-aware windows · crash-orphaned reservations auto-expire
+      </p>
+    </div>
+
+    <!-- confirmation gate -->
+    <div class="fcard">
+      <p class="icon">⚠️</p>
+      <h3 class="h-display text-lg mt-3">confirmation gate</h3>
+      <p class="text-sm mt-3 text-ink2 leading-relaxed">
+        destructive actions raise a unique challenge with a random nonce phrase
+        (<code class="text-amber">DELETE 42</code>). the agent must get human
+        confirmation before proceeding. three wrong guesses voids the challenge.
+        whitelist with one click for tools you trust.
+      </p>
+      <p class="mt-3 text-xs text-ink3">
+        5-minute expiry · single-use · undeclared destructive tools error at wrap time
+      </p>
+    </div>
+
+    <!-- permission broker -->
+    <div class="fcard">
+      <p class="icon">🔑</p>
+      <h3 class="h-display text-lg mt-3">permission broker</h3>
+      <p class="text-sm mt-3 text-ink2 leading-relaxed">
+        agents request elevated access mid-conversation — budget increases, tool grants.
+        an approver chain (console, guardian bot, or custom UI) decides. approved
+        grants take effect immediately, in the same session, no restart.
+      </p>
+      <p class="mt-3 text-xs text-ink3">
+        pluggable approver protocol · guardian bot auto-approves under configurable threshold
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<pre class="divider">────────────────────────────────────────────────────────────────────────────────</pre>
+
+<!-- ── QUICK START ── -->
+<section class="py-16 sm:py-20">
+  <p class="label">// 03 &mdash; five minutes</p>
+  <h2 class="h-display text-2xl sm:text-3xl mt-4 max-w-2xl leading-tight">
+    quick start.
+  </h2>
+
+  <div class="mt-8 space-y-6 max-w-2xl">
+    <div>
+      <p class="text-sm text-ink2 mb-2">install</p>
+      <pre class="code"><span class="cm"># zero runtime dependencies — stdlib only</span>
+<span class="op">$</span> pip install fluffy</pre>
+    </div>
+    <div>
+      <p class="text-sm text-ink2 mb-2">wrap a tool</p>
+      <pre class="code"><span class="kw">from</span> fluffy <span class="kw">import</span> Guard, ToolMeta, SpendSpec
+
+<span class="fn">guard</span> <span class="op">=</span> Guard()
+
+<span class="cm"># tag a tool as spend-tracked — $25/day cap by default</span>
+<span class="fn">safe_charge</span> <span class="op">=</span> guard.wrap(
+    stripe.charge,
+    meta=ToolMeta(
+        name=<span class="str">"stripe.charge"</span>,
+        tags={<span class="str">"spend"</span>},
+        spend=SpendSpec(
+            card_id=<span class="str">"ops"</span>,
+            amount_from=<span class="kw">lambda</span> args, kw: kw[<span class="str">"amount_cents"</span>]
+        )
+    )
+)</pre>
+    </div>
+    <div>
+      <p class="text-sm text-ink2 mb-2">see a block happen</p>
+      <pre class="code"><span class="cm"># $50 charge against $25 daily cap</span>
+<span class="op">>>></span> safe_charge(amount_cents=<span class="num">5000</span>)
+<span class="fn">SpendLimitExceeded</span>: Blocked: $50.00 requested, daily cap $25.00,
+$0.00 already spent today. Remaining: $25.00</pre>
+    </div>
+  </div>
+
+  <p class="mt-8 text-sm text-ink3 max-w-2xl">
+    the block message is plain english — your agent can relay it to the user verbatim,
+    or call <code class="text-purple">guard.request_permission()</code> to ask for a cap raise mid-conversation.
+  </p>
+</section>
+
+<pre class="divider">────────────────────────────────────────────────────────────────────────────────</pre>
+
+<!-- ── HOW IT WORKS ── -->
+<section class="py-16 sm:py-20">
+  <p class="label">// 04 &mdash; architecture</p>
+  <h2 class="h-display text-2xl sm:text-3xl mt-4 max-w-2xl leading-tight">
+    how it works.
+  </h2>
+
+  <p class="mt-6 text-ink2 max-w-2xl">
+    fluffy is a library, not a proxy. you import it, wrap the tools your agent calls,
+    and the interceptor pipeline handles the rest.
+  </p>
+
+  <div class="mt-8 overflow-x-auto">
+    <pre class="code text-xs sm:text-sm leading-relaxed">
+ agent calls <span class="fn">safe_charge</span>(amount_cents=5000)
+          │
+          ▼
+┌─────────────────────────────────────────────┐
+│ PermissionInterceptor   ← restricted tools denied here
+│ SpendInterceptor        ← caps checked, money reserved atomically
+│ ConfirmInterceptor      ← destructive? raise challenge
+│ SecretResolveInterceptor ← <span class="purple">{{secret:key}}</span> → real value
+├─────────────────────────────────────────────┤
+│           TOOL EXECUTES                     │
+├─────────────────────────────────────────────┤
+│ SecretRedactInterceptor  ← scrub results
+│ AuditInterceptor         ← write redacted row to sqlite
+└─────────────────────────────────────────────┘
+          │
+          ▼
+    result returned (or <span class="fn">Blocked</span> exception raised)</pre>
+  </div>
+
+  <p class="mt-6 text-sm text-ink3 max-w-2xl">
+    untagged calls skip all I/O — a set-intersection check, then straight to execution.
+    only tagged calls pay for the pipeline. <strong class="text-green">under 1 ms</strong>
+    overhead for the common path.
+  </p>
+</section>
+
+<pre class="divider">────────────────────────────────────────────────────────────────────────────────</pre>
+
+<!-- ── THREAT MODEL ── -->
+<section class="py-16 sm:py-20">
+  <p class="label">// 05 &mdash; honesty</p>
+  <h2 class="h-display text-2xl sm:text-3xl mt-4 max-w-2xl leading-tight">
+    what fluffy does <em>not</em> defend against.
+  </h2>
+
+  <ul class="mt-8 space-y-4 max-w-2xl text-sm text-ink2">
+    <li class="flex gap-3">
+      <span class="text-red shrink-0">✗</span>
+      <span><strong class="text-ink">a malicious host process.</strong> fluffy runs inside your agent's
+      Python process — if that process is compromised, no library can help.</span>
+    </li>
+    <li class="flex gap-3">
+      <span class="text-red shrink-0">✗</span>
+      <span><strong class="text-ink">prompt-injected confirm() calls.</strong>
+      the agent itself calls <code class="text-purple">guard.confirm()</code>. if an attacker
+      controls the agent's output, they can confirm their own challenges.
+      confirmation must come from the <em>human channel</em>.</span>
+    </li>
+    <li class="flex gap-3">
+      <span class="text-red shrink-0">✗</span>
+      <span><strong class="text-ink">side channels outside wrapped tools.</strong>
+      if the agent has unrestricted access to <code class="text-purple">subprocess.run()</code>
+      or an unwrapped HTTP client, fluffy can't see those calls.</span>
+    </li>
+  </ul>
+
+  <p class="mt-6 text-sm text-ink3 max-w-2xl">
+    fluffy is one layer in a defense-in-depth strategy — not a silver bullet.
+    pair it with sandboxing, least-privilege IAM, and human-in-the-loop for high-stakes actions.
+  </p>
+</section>
+
+<pre class="divider">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</pre>
+
+<!-- ── FOOTER ── -->
+<footer class="py-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-ink3 border-t border-[#2e2e3e]">
+  <div class="flex flex-wrap gap-x-6 gap-y-2">
+    <a class="link text-ink3" href="https://github.com/josephg29/fluffy" target="_blank" rel="noopener">github</a>
+    <a class="link text-ink3" href="https://pypi.org/project/fluffy/" target="_blank" rel="noopener">pypi</a>
+    <a class="link text-ink3" href="https://josephg29.github.io/portfolio/" target="_blank" rel="noopener">portfolio &larr; back</a>
+  </div>
+  <p>fluffy · mit · built by <a class="link text-ink3" href="https://github.com/josephg29" target="_blank" rel="noopener">josephg29</a></p>
+</footer>
+
+</body>
+</html>
